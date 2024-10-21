@@ -4,6 +4,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <dirent.h>
+#include <stdlib.h>
+#include <stdint.h> //for uint64
 #include "ufmymusic.h"  // Include the header file
 
 #include <openssl/md5.h> //for hashing diff
@@ -16,8 +18,14 @@ void diff_files(int client_sock);
 void pull_files(int client_sock);
 FileList get_server_files();
 int compute_file_md5(const char *filename, unsigned char *md5_digest);
+ssize_t send_all(int sockfd, const void *buf, size_t len);
+ssize_t recv_all(int sockfd, void *buf, size_t len);
 
 int main() {
+    if (chdir("./serverdir/data") != 0) {
+        perror("Failed to change directory to ./server/data");
+        exit(EXIT_FAILURE);
+    }
     int server_fd, client_sock, c;
     struct sockaddr_in server, client;
     pthread_t thread_id;
@@ -73,32 +81,37 @@ void *client_handler(void *socket_desc) {
     int client_sock = *(int *)socket_desc;
     free(socket_desc);
     Message msg;
-    ssize_t bytes_received = recv(client_sock, &msg, sizeof(msg), 0);
-    if (bytes_received <= 0) {
-        perror("Receive failed");
-        close(client_sock);
-        pthread_exit(NULL);
-    }
+    ssize_t bytes_received;
+    while (1) {
+        bytes_received = recv_all(client_sock, &msg, sizeof(msg));
+        if (bytes_received <= 0) {
+            if (bytes_received < 0) {
+                perror("Receive failed");
+            } else {
+                printf("Client disconnected.\n");
+            }
+            close(client_sock);
+            pthread_exit(NULL);
+        }
 
-    switch (msg.type) {
-        case 1:
-            list_files(client_sock);
-            break;
-        case 2:
-            diff_files(client_sock);
-            break;
-        case 3:
-            pull_files(client_sock);
-            break;
-        case 4:
-            printf("Client disconnected.\n");
-            break;
-        default:
-            printf("Invalid request.\n");
-
+        switch (msg.type) {
+            case 1:
+                list_files(client_sock);
+                break;
+            case 2:
+                diff_files(client_sock);
+                break;
+            case 3:
+                pull_files(client_sock);
+                break;
+            case 4:
+                printf("Client requested to leave.\n");
+                close(client_sock);
+                pthread_exit(NULL);
+            default:
+                printf("Invalid request.\n");
+        }
     }
-    close(client_sock);
-    pthread_exit(NULL);
 }
 
 int compute_file_md5(const char *filename, unsigned char *md5_digest) {
@@ -262,12 +275,11 @@ void pull_files(int client_sock) {
         close(client_sock);
         return;
     }
-    FileList diff_files;
-    if (recv_all(client_sock, &diff_files, sizeof(diff_files)) <= 0) {
-        perror("Receive diff files failed");
-        close(client_sock);
-        return;
-    }  // Receive list of files to pull (from Diff)
+    // if (recv_all(client_sock, &diff_files, sizeof(diff_files)) <= 0) {
+    //     perror("Receive diff files failed");
+    //     close(client_sock);
+    //     return;
+    // }  // Receive list of files to pull (from Diff)
     int num_files_to_send = diff_files.file_count;
     if (send_all(client_sock, &num_files_to_send, sizeof(num_files_to_send)) != sizeof(num_files_to_send)) {
         perror("Send number of files failed");
@@ -298,8 +310,8 @@ void pull_files(int client_sock) {
             fclose(file);
             continue;
         }
-        long file_size = ftell(file);
-        if (file_size < 0) {
+        uint64_t file_size = ftell(file);
+        if (file_size == (uint64_t)-1) {
             perror("ftell failed");
             fclose(file);
             continue;

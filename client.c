@@ -88,6 +88,10 @@ ssize_t recv_all(int sockfd, void *buf, size_t len) {
 }
 
 int main() {
+    if (chdir("./clientdir/data") != 0) {
+        perror("Failed to change directory to ./clientdir/data");
+        exit(EXIT_FAILURE);
+    }
     int sock;
     struct sockaddr_in server;
     Message msg;
@@ -108,55 +112,47 @@ int main() {
     }
 
     int choice;
-    printf("1. List Files\n2. Diff\n3. Pull\n4. Leave\nChoose an action: ");
-    if (scanf("%d", &choice) != 1) {
-        fprintf(stderr, "Invalid input\n");
-        close(sock);
-        return 1;
-    }
-    if (choice < 1 || choice > 4) {
-        fprintf(stderr, "Invalid choice\n");
-        close(sock);
-        return 1;
-    }
-    msg.type = choice;
+    while (1) {
+        printf("1. List Files\n2. Diff\n3. Pull\n4. Leave\nChoose an action: ");
+        if (scanf("%d", &choice) != 1) {
+            fprintf(stderr, "Invalid input\n");
+            // Clear the input buffer
+            int c;
+            while ((c = getchar()) != '\n' && c != EOF);
+            continue;
+        }
+        // Clear the input buffer
+        int c;
+        while ((c = getchar()) != '\n' && c != EOF);
 
-    send(sock, &msg, sizeof(msg), 0);
-    //LIST  
-    if (choice == 1) {
-        if (recv_all(sock, &server_files, sizeof(server_files)) != sizeof(server_files)) {
-            perror("Receive failed");
-            close(sock);
-            return 1;
+        if (choice < 1 || choice > 4) {
+            fprintf(stderr, "Invalid choice\n");
+            continue;
         }
-        printf("Server has the following files:\n");
-        for (int i = 0; i < server_files.file_count; i++) {
-            printf("%s\n", server_files.files[i].filename);
-        }
-    }
-    //DIFF OR PULL
-    else if (choice == 2 || choice == 3) {
-        // Diff or Pull - Send client file list to server
-        get_client_files(&filelist);
-        if (send_all(sock, &filelist, sizeof(filelist)) != sizeof(filelist)) {
+        msg.type = choice;
+
+        // Send the message type to the server
+        if (send_all(sock, &msg, sizeof(msg)) != sizeof(msg)) {
             perror("Send failed");
             close(sock);
             return 1;
         }
 
-        if (choice == 2) {
-            // Receive file differences for Diff
+        // LIST
+        if (choice == 1) {
             if (recv_all(sock, &server_files, sizeof(server_files)) != sizeof(server_files)) {
                 perror("Receive failed");
                 close(sock);
                 return 1;
             }
-            printf("Files on server that are different from client:\n");
+            printf("Server has the following files:\n");
             for (int i = 0; i < server_files.file_count; i++) {
                 printf("%s\n", server_files.files[i].filename);
             }
-            } else if (choice == 3) {
-                    // First, get client file list and send to server
+        }
+        // DIFF OR PULL
+        else if (choice == 2 || choice == 3) {
+            // Send client file list to server
             get_client_files(&filelist);
             if (send_all(sock, &filelist, sizeof(filelist)) != sizeof(filelist)) {
                 perror("Send failed");
@@ -172,92 +168,102 @@ int main() {
                 return 1;
             }
 
-            // Send back the diff_files to request files to pull
-            if (send_all(sock, &diff_files, sizeof(diff_files)) != sizeof(diff_files)) {
-                perror("Send diff_files failed");
-                close(sock);
-                return 1;
-            }
-            // Receive the number of files the server will send
-            int num_files_to_receive;
-            if (recv_all(sock, &num_files_to_receive, sizeof(num_files_to_receive)) != sizeof(num_files_to_receive)) {
-                perror("Receive number of files failed");
-                close(sock);
-                return 1;
-            }
-
-            // Receive files from server
-            for (int i = 0; i < num_files_to_receive; i++) {
-                // Receive filename length
-                size_t filename_len;
-                if (recv_all(sock, &filename_len, sizeof(filename_len)) != sizeof(filename_len)) {
-                    perror("Receive filename length failed");
+            if (choice == 2) {
+                // DIFF operation
+                printf("Files on server that are different from client:\n");
+                for (int i = 0; i < diff_files.file_count; i++) {
+                    printf("%s\n", diff_files.files[i].filename);
+                }
+            } else if (choice == 3) {
+                // PULL operation
+                // Send back the diff_files to request files to pull
+                if (send_all(sock, &diff_files, sizeof(diff_files)) != sizeof(diff_files)) {
+                    perror("Send diff_files failed");
+                    close(sock);
+                    return 1;
+                }
+                // Receive the number of files the server will send
+                int num_files_to_receive;
+                if (recv_all(sock, &num_files_to_receive, sizeof(num_files_to_receive)) != sizeof(num_files_to_receive)) {
+                    perror("Receive number of files failed");
                     close(sock);
                     return 1;
                 }
 
-                // Receive filename
-                char filename[MAX_FILENAME_LEN];
-                if (recv_all(sock, filename, filename_len) != filename_len) {
-                    perror("Receive filename failed");
-                    close(sock);
-                    return 1;
-                }
-
-                // Receive file size
-                uint64_t file_size;
-                if (recv_all(sock, &file_size, sizeof(file_size)) != sizeof(file_size)) {
-                    perror("Receive file size failed");
-                    close(sock);
-                    return 1;
-                }
-
-                // Receive file content
-                FILE *file = fopen(filename, "wb");
-                if (!file) {
-                    perror("Cannot open file to write");
-                    // Optionally, consume the data from the socket to keep it in sync
-                    uint64_t bytes_to_discard = file_size;
-                    char discard_buffer[1024];
-                    while (bytes_to_discard > 0) {
-                        size_t to_receive = (bytes_to_discard < sizeof(discard_buffer)) ? bytes_to_discard : sizeof(discard_buffer);
-                        ssize_t bytes_received = recv_all(sock, discard_buffer, to_receive);
-                        if (bytes_received <= 0) {
-                            perror("Receive file content failed");
-                            close(sock);
-                            return 1;
-                        }
-                        bytes_to_discard -= bytes_received;
-                    }
-                    continue;
-                }
-
-                uint64_t total_received = 0;
-                char buffer[1024];
-                while (total_received < file_size) {
-                    size_t to_receive = (file_size - total_received < sizeof(buffer)) ? (file_size - total_received) : sizeof(buffer);
-                    ssize_t bytes_received = recv_all(sock, buffer, to_receive);
-                    if (bytes_received <= 0) {
-                        perror("Receive file content failed");
-                        fclose(file);
+                // Receive files from server
+                for (int i = 0; i < num_files_to_receive; i++) {
+                    // Receive filename length
+                    size_t filename_len;
+                    if (recv_all(sock, &filename_len, sizeof(filename_len)) != sizeof(filename_len)) {
+                        perror("Receive filename length failed");
                         close(sock);
                         return 1;
                     }
-                    fwrite(buffer, 1, bytes_received, file);
-                    total_received += bytes_received;
+
+                    // Receive filename
+                    char filename[MAX_FILENAME_LEN];
+                    if (recv_all(sock, filename, filename_len) != filename_len) {
+                        perror("Receive filename failed");
+                        close(sock);
+                        return 1;
+                    }
+
+                    // Receive file size
+                    uint64_t file_size;
+                    if (recv_all(sock, &file_size, sizeof(file_size)) != sizeof(file_size)) {
+                        perror("Receive file size failed");
+                        close(sock);
+                        return 1;
+                    }
+
+                    // Receive file content
+                    FILE *file = fopen(filename, "wb");
+                    if (!file) {
+                        perror("Cannot open file to write");
+                        // Consume the data from the socket to keep it in sync
+                        uint64_t bytes_to_discard = file_size;
+                        char discard_buffer[1024];
+                        while (bytes_to_discard > 0) {
+                            size_t to_receive = (bytes_to_discard < sizeof(discard_buffer)) ? bytes_to_discard : sizeof(discard_buffer);
+                            ssize_t bytes_received = recv_all(sock, discard_buffer, to_receive);
+                            if (bytes_received <= 0) {
+                                perror("Receive file content failed");
+                                close(sock);
+                                return 1;
+                            }
+                            bytes_to_discard -= bytes_received;
+                        }
+                        continue;
+                    }
+
+                    uint64_t total_received = 0;
+                    char buffer[1024];
+                    while (total_received < file_size) {
+                        size_t to_receive = (file_size - total_received < sizeof(buffer)) ? (file_size - total_received) : sizeof(buffer);
+                        ssize_t bytes_received = recv_all(sock, buffer, to_receive);
+                        if (bytes_received <= 0) {
+                            perror("Receive file content failed");
+                            fclose(file);
+                            close(sock);
+                            return 1;
+                        }
+                        fwrite(buffer, 1, bytes_received, file);
+                        total_received += bytes_received;
+                    }
+                    fclose(file);
+                    printf("Received file: %s\n", filename);
                 }
-                fclose(file);
-                printf("Received file: %s\n", filename);
             }
         }
-    }
-    //LEAVE
-    else if (choice == 4) {
-        printf("Ending session and closing connection.\n");
-        close(sock);
-        return 0;
+        // LEAVE
+        else if (choice == 4) {
+            printf("Ending session and closing connection.\n");
+            close(sock);
+            return 0;
+        }
     }
 
+    // Should not reach here
     close(sock);
     return 0;
 }
