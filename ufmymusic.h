@@ -16,8 +16,8 @@ typedef struct {
 } FileEntry;
 
 typedef struct {
-    FileEntry files[MAX_FILES]; // List of filenames (max 100 files)
-    int file_count;  // Number of files
+    FileEntry files[MAX_FILES];
+    int file_count;
 } FileList;
 
 #endif

@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdint.h> //for uint64
-#include "ufmymusic.h"  // Include the header file
+#include "ufmymusic.h" 
 
 #include <openssl/md5.h> //for hashing diff
 
@@ -55,13 +55,12 @@ int main() {
         client_sock = accept(server_fd, (struct sockaddr *)&client, (socklen_t *)&c);
         if (client_sock < 0) {
             perror("Accept failed");
-            continue; // Optionally, you may choose to exit or handle differently
+            continue;
         }
-        // Rest of your code
         int* new_sock = malloc(sizeof(int));
         if(new_sock == NULL){
             perror("Failed to allocate memory");
-            close(client_sock); // Close the client socket since we can't handle it
+            close(client_sock);
             continue;
         }
         *new_sock = client_sock;
@@ -135,7 +134,6 @@ int compute_file_md5(const char *filename, unsigned char *md5_digest) {
     return 0;
 }
 
-// Function to list files in the server's directory and return them
 FileList get_server_files() {
     DIR *d;
     struct dirent *dir;
@@ -161,7 +159,7 @@ FileList get_server_files() {
         closedir(d);
     }
     else {
-        perror("opendir");  // Print error if directory can't be opened
+        perror("opendir");
     }
     return filelist;
 }
@@ -187,40 +185,34 @@ ssize_t recv_all(int sockfd, void *buf, size_t len) {
             perror("Receive failed");
             return -1;
         } else if (bytes_received == 0) {
-            // Connection closed by the client
             break;
         }
         total_received += bytes_received;
     }
     return total_received;
 }
-// Function to send the server's file list to the client
 void list_files(int client_sock) {
     printf("Handling LIST request for client %d\n", client_sock);
-    FileList filelist = get_server_files();  // Use helper to get server files
+    FileList filelist = get_server_files(); 
     ssize_t bytes_sent = send_all(client_sock, &filelist, sizeof(filelist));
     if (bytes_sent != sizeof(filelist)) {
         perror("Send failed");
     }
 }
 
-// Function to compare files between client and server (Diff functionality)
 void diff_files(int client_sock) {
     printf("Handling DIFF request for client %d\n", client_sock);
     FileList client_files, server_files, diff;
     diff.file_count = 0;
 
-    // Receive client file list
     if (recv_all(client_sock, &client_files, sizeof(client_files)) <= 0) {
         perror("Receive client file list failed");
         close(client_sock);
         return;
     }
 
-    // Get the list of files on the server using the helper function
     server_files = get_server_files();
 
-    // Compare client and server files
     for (int i = 0; i < server_files.file_count; i++) {
         int found = 0;
         for (int j = 0; j < client_files.file_count; j++) {
@@ -230,12 +222,10 @@ void diff_files(int client_sock) {
             }
         }
         if (!found) {
-            // If the file is on the server but not on the client, add it to the diff
             diff.files[diff.file_count++] = server_files.files[i];
         }
     }
 
-    // Send the diff (missing files on the client) back to the client
     if (send_all(client_sock, &diff, sizeof(diff)) != sizeof(diff)) {
         perror("Send diff failed");
         close(client_sock);
@@ -245,7 +235,6 @@ void diff_files(int client_sock) {
 
 void pull_files(int client_sock) {
     printf("Handling PULL request for client %d\n", client_sock);
-    // Receive client file list
     FileList client_files;
     if (recv_all(client_sock, &client_files, sizeof(client_files)) <= 0) {
         perror("Receive client file list failed");
@@ -253,7 +242,6 @@ void pull_files(int client_sock) {
         return;
     }
 
-    // Compute diff_files
     FileList server_files = get_server_files();
     FileList diff_files;
     diff_files.file_count = 0;
@@ -270,7 +258,6 @@ void pull_files(int client_sock) {
         }
     }
 
-    // Send diff_files to client
     if (send_all(client_sock, &diff_files, sizeof(diff_files)) != sizeof(diff_files)) {
         perror("Send diff_files failed");
         close(client_sock);
@@ -287,7 +274,6 @@ void pull_files(int client_sock) {
         close(client_sock);
         return;
     }
-    // Iterate over the list of files the client wants to pull
     for (int i = 0; i < diff_files.file_count; i++) {
         char *filename = diff_files.files[i].filename;
         FILE *file = fopen(filename, "rb");
@@ -297,7 +283,6 @@ void pull_files(int client_sock) {
             continue;
         }
 
-        // Send file name to the client
         size_t filename_len = strlen(filename) + 1;
         if (send_all(client_sock, &filename_len, sizeof(filename_len)) < 0 ||
             send_all(client_sock, filename, filename_len) < 0) {
@@ -305,7 +290,6 @@ void pull_files(int client_sock) {
             fclose(file);
             continue;
         }
-        // Send the file size
         if (fseek(file, 0, SEEK_END) != 0) {
             perror("fseek failed");
             fclose(file);
@@ -324,7 +308,6 @@ void pull_files(int client_sock) {
             continue;
         }
 
-        // Send file contents in chunks
         char buffer[1024];
         size_t bytes_read;
         while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
@@ -334,6 +317,6 @@ void pull_files(int client_sock) {
             }
         }
 
-        fclose(file);  // Close the file after sending
+        fclose(file); 
     }
 }
