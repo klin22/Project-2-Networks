@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 #include <dirent.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <stdint.h> //for uint64
 #include "ufmymusic.h"  // Include the header file
 

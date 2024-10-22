@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <dirent.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <openssl/md5.h>
 #include "ufmymusic.h"
 #define PORT 8080
