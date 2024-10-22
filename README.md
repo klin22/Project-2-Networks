@@ -4,7 +4,7 @@ This project implements a file synchronization system between a client and a ser
 
 ## Build Instructions
 
-To build the project, use the provided Makefile. Run the following command in the terminal:
+To build the project, use the provided Makefile. Run the following command in the terminal (**root directory** of the project):
 
 ### Using WSL or Linux
 
@@ -21,7 +21,7 @@ brew install openssl
 make
 ```
 
-### Custom OpenSSL location
+### Custom OpenSSL Location
 
 Replace the path with you're openssl path
 
@@ -33,7 +33,7 @@ Following the steps above will compile both the client and server programs.
 
 ## Running the Server
 
-To run the server, execute the following command:
+To run the server, execute the following command (root directory of project):
 
 ```zsh
 ./server
@@ -43,7 +43,7 @@ The server will start listening on port 8080 and will serve files from the data 
 
 ## Running the Client
 
-To run the client, execute the following command in a **different terminal**:
+To run the client, execute the following command in a **different terminal** (root directory of project):
 
 ```zsh
 ./client
